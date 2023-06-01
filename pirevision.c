@@ -273,7 +273,7 @@ physical_memory_mbytes(const revcode_32 revision_code)
 char *
 physical_memory_str(const revcode_32 revision_code,
                     char *result,
-                    const int result_size)
+                    const size_t result_size)
 {
     char result_str[4 + 2 + 1] = { '\0' }; // Large enough for DDDDSB\0
     const unsigned int mega_bytes = physical_memory_mbytes(revision_code);
@@ -552,26 +552,45 @@ process_rev_codes(const char **codes,
 }
 
 int
-process_proc_cpuinfo(const int print_json)
+read_proc_cpuinfo(char *buffer, const size_t buffer_size)
 {
-    char rev_code_str[32] = { '\0' };
+    if (buffer_size <= 0) {
+        return EXIT_FAILURE;
+    }
+
     const char *cpuinfo = "/proc/cpuinfo";
-    FILE *fp = popen("cat /proc/cpuinfo | awk '/Revision/ {print $3}'", "r");
+    FILE *fp = fopen(cpuinfo, "rt");
 
     if (fp == NULL) {
         fprintf(stderr, "Could not open %s\n", cpuinfo);
         return EXIT_FAILURE;
     }
-    fgets(rev_code_str, sizeof(rev_code_str), fp);
-    pclose(fp);
-    if (strlen(rev_code_str) == 0) {
-        fprintf(stderr, "Unable to extract revision code from %s\n",
-                cpuinfo);
+
+    char line[256];
+    char format[32];// Creating limiting format to avoid buffer overflow
+
+    snprintf(format,
+             sizeof(format), "Revision : %%%ds",
+             (int)(buffer_size - 1));
+
+    buffer[0] = '\0';
+    while (fgets(line, sizeof(line), fp) != NULL) {
+        if (sscanf(line, format, buffer) == 1)
+           break;
+    }
+    fclose(fp);
+    return EXIT_SUCCESS;
+}
+
+int
+process_proc_cpuinfo(const int print_json)
+{
+    char rev_code_str[32] = { '\0' };
+    if (read_proc_cpuinfo(rev_code_str, sizeof(rev_code_str)) == EXIT_FAILURE) {
         return EXIT_FAILURE;
     }
     const char *codes[] = { rev_code_str };
-    process_rev_codes(codes, 1, print_json);
-    return EXIT_SUCCESS;
+    return process_rev_codes(codes, 1, print_json);
 }
 
 /**
